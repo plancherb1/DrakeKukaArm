@@ -1,0 +1,13 @@
+%% Compute the easySwingUpStart point for a Kuka arm
+function [xf,uf] = easySwingUpStartPoint(p,v,easyLevel)
+    % guess fixed point from inspector
+    %v.inspector()
+    %return;
+    xf = zeros(p.num_positions + p.num_velocities,1);
+    switch easyLevel
+        case 1
+            xf(2) = 0.25;
+        case 2
+    end
+    uf = zeros(size(p.umin,1),1);
+end

@@ -1,0 +1,8 @@
+%% Compute the horizontal (starting) point for a Kuka arm
+function [xf,uf] = horizontalPoint(p,v)
+    % guess fixed point from inspector
+    %v.inspector()
+    %return;
+    x0 = zeros(p.num_positions + p.num_velocities,1);
+    u0 = zeros(size(p.umin,1),1);
+end
