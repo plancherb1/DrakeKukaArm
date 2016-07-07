@@ -53,7 +53,7 @@ function runMoveBlock()
     function [g,dg] = cost(p,dt,x,u,blockPosOffset,blockVelOffset)
         % penalize for distance of hand from block
         [xerr, dXerr] = distanceHandBlock(p,x,blockPosOffset);
-        Q = 10*diag(ones(1,size(xerr,1)));
+        Q = diag(ones(1,size(xerr,1)));
         
         % penalize for finger movements
         u_size = size(u,1);
@@ -272,18 +272,11 @@ function runMoveBlock()
 
     %% setup Dircol
     function [prog] = setUpDircol(p,x0,xf,N,d,blockPosOffset,blockVelOffset)
-        minor = 0.001;
-        major = 0.01;
-        options.MinorFeasibilityTolerance = minor;
-        options.MajorFeasibilityTolerance = major;
-        options.MajorOptimalityTolerance = major;
-        options.compl_slack = minor;
-        options.lincompl_slack = major;
-        options.jlcompl_slack = major;
+        
         prog = DircolTrajectoryOptimization(p,N,[2 6],options);
         % intial and final states and costs
         prog = prog.addStateConstraint(ConstantConstraint(x0),1);
-        prog = prog.addStateConstraint(BoundingBoxConstraint(xf-major,xf+major),N);
+        prog = prog.addStateConstraint(ConstantConstraint(xf),N);
         prog = prog.addRunningCost(@(dt,x,u)cost(p,dt,x,u,blockPosOffset,blockVelOffset));
         prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
         % get all states for certain constraints
@@ -302,7 +295,7 @@ function runMoveBlock()
         prog = prog.addStateConstraint(non_ground_penetration_b,all_states);
         % make sure the block doesn't move if not touching the arm else
         % moves at same speed as the arm
-        block_constraint = FunctionHandleConstraint(-1*minor,minor,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
+        block_constraint = FunctionHandleConstraint(-0.1,0.1,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
         prog = prog.addStateConstraint(block_constraint,all_states);
     end
 end

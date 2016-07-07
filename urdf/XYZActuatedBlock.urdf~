@@ -33,15 +33,15 @@
   <joint name="block_x" type="prismatic">
     <origin rpy="0 0 0" xyz="0 0 0.0"/>
     <parent link="base_link"/>
-    <child link="base_link_2"/>
+    <child link="block_actual"/>
     <limit lower="-inf" upper="inf"/>
     <axis xyz="1 0 0"/>
   </joint>
-
+  
   <joint name="block_y" type="prismatic">
     <origin rpy="0 0 0" xyz="0 0 0.0"/>
     <parent link="base_link_2"/>
-    <child link="base_link_3"/>
+    <child link="block_actual"/>
     <limit lower="-inf" upper="inf"/>
     <axis xyz="0 1 0"/>
   </joint>
@@ -53,24 +53,5 @@
     <limit lower="-inf" upper="inf"/>
     <axis xyz="0 0 1"/>
   </joint>
-
-  <transmission type="SimpleTransmission" name="x_trans">
-    <actuator name="x_cntrl" />
-    <joint name="block_x" />
-    <mechanicalReduction>1</mechanicalReduction>
-  </transmission>
-
-  <transmission type="SimpleTransmission" name="y_trans">
-    <actuator name="y_cntrl" />
-    <joint name="block_y" />
-    <mechanicalReduction>1</mechanicalReduction>
-  </transmission>
-
-  <transmission type="SimpleTransmission" name="z_trans">
-    <actuator name="z_cntrl" />
-    <joint name="block_z" />
-    <mechanicalReduction>1</mechanicalReduction>
-  </transmission>
-
 </robot>
 
