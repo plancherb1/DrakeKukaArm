@@ -66,7 +66,7 @@ function runMoveBlock()
         % then compute total cost and gradients
         g = xerr'*Q*xerr + u'*R*u;
         dgddt = 0;
-        dgdx = 0*2*xerr'*Q*dXerr;
+        dgdx = 2*xerr'*Q*dXerr;
         dgdu = 2*u'*R;
         dg = [dgddt,dgdx,dgdu];
     end
@@ -207,11 +207,11 @@ function runMoveBlock()
 
     %% function to retrun block height
     function [z] = ballHeight(x,blockPosOffset)
-        z = x(blockPosOffset+3) + 0.2; %0.2 is radius
+        z = x(blockPosOffset+3) - 0.2; %0.2 is radius
     end
     
-    %% matrix of distance of block from hand (base)
-    function [xerr, dXerr] = distanceHandBlock(p,x,blockPosOffset)
+    %% matrix of distance of block from hand (base) and norm
+    function [xerr, dXerr, dis, dDis] = distanceHandBlock(p,x,blockPosOffset)
         [hand_pos, dHand_pos, ddHand_pos] = handPos(p,x);
         block_pos = x(blockPosOffset+1:blockPosOffset+3);
         dBlock_pos = zeros(3,p.num_positions);
@@ -220,6 +220,11 @@ function runMoveBlock()
         dBlock_pos(3,blockPosOffset+3) = 1;
         xerr = hand_pos - block_pos;
         dXerr = [dHand_pos - dBlock_pos, zeros(3,p.num_velocities)];
+        disSq = xerr'*eye(size(xerr,1))*xerr;
+        dDisSq = 2*xerr'*dXerr;
+        radius = 0.2;
+        dis = sqrt(disSq) - radius;
+        dDis = 1/2*disSq * dDisSq;
     end
 
     %% repetatively multiply sections of A by B
@@ -240,47 +245,54 @@ function runMoveBlock()
         dHand_vel = [repmult(ddHand_pos,qd),dHand_pos];
     end
 
-    %% function to to return block vel
-    function [block_vel, dBlock_vel] = blockVel(x,blockVelOffset)
+    %% function to to return block vel and its norm
+    function [block_vel, dBlock_vel, vel, dVel] = blockVel(x,blockVelOffset)
         block_vel = x(blockVelOffset+1:blockVelOffset+3);
         dBlock_vel = zeros(1,size(x,1));
         dBlock_vel(1,blockVelOffset+1) = 1;
         dBlock_vel(2,blockVelOffset+2) = 1;
         dBlock_vel(3,blockVelOffset+3) = 1;
+        vel = sqrt(block_vel'*eye(size(block_vel,1))*block_vel);
+        dVel = 2*block_vel'*dBlock_vel;
     end
 
     %% function ensure correct block velocity
-    function [vel,dVel] = blockVelDist(p,x,d,blockPosOffset,blockVelOffset)
-        [xerr, dXerr] = distanceHandBlock(p,x,blockPosOffset);
+    function [res,dRes] = blockVelDist(p,x,d,blockPosOffset,blockVelOffset)
+        [xerr, dXerr, dis, dDis] = distanceHandBlock(p,x,blockPosOffset);
+        [block_vel, dBlock_vel, bvel, dBvel] = blockVel(x,blockVelOffset);
+        res = dis*bvel;
+        dRes = dis*dBvel + bvel*dDis;
+        %{
         % block velocity of zero if over touching distance
         if norm(xerr) > d + 0.2 %(radius of 0.2 now)
             [block_vel, dBlock_vel] = blockVel(x,blockVelOffset);
-            vel = block_vel'*eye(size(block_vel,1))*block_vel;
-            dVel = 1/2*block_vel'*dBlock_vel;
+            res = block_vel'*eye(size(block_vel,1))*block_vel;
+            dRes = 1/2*block_vel'*dBlock_vel;
         % else same as vel of arm in xyz (and TBD also for rpy)
         else
             [hand_vel, dHand_vel] = handVel(p,x);
             [block_vel, dBlock_vel] = blockVel(x,blockVelOffset);
             delta_vel = hand_vel - block_vel;
             dDelta_vel = dHand_vel - dBlock_vel;
-            vel = delta_vel'*eye(size(delta_vel,1))*delta_vel;
-            dVel = 1/2*delta_vel'*dDelta_vel;
-            %vel = 0;
-            %dVel = zeros(size(dVel,1),size(dVel,2));
+            res = delta_vel'*eye(size(delta_vel,1))*delta_vel;
+            dRes = 1/2*delta_vel'*dDelta_vel;
         end
+        %}
     end
 
     %% setup Dircol
     function [prog] = setUpDircol(p,x0,xf,N,d,blockPosOffset,blockVelOffset)
         minor = 0.001;
         major = 0.01;
+        %{
         options.MinorFeasibilityTolerance = minor;
         options.MajorFeasibilityTolerance = major;
         options.MajorOptimalityTolerance = major;
         options.compl_slack = minor;
         options.lincompl_slack = major;
         options.jlcompl_slack = major;
-        prog = DircolTrajectoryOptimization(p,N,[2 6],options);
+        %}
+        prog = DircolTrajectoryOptimization(p,N,[2 6]);%,options);
         % intial and final states and costs
         prog = prog.addStateConstraint(ConstantConstraint(x0),1);
         prog = prog.addStateConstraint(BoundingBoxConstraint(xf-major,xf+major),N);
@@ -302,7 +314,7 @@ function runMoveBlock()
         prog = prog.addStateConstraint(non_ground_penetration_b,all_states);
         % make sure the block doesn't move if not touching the arm else
         % moves at same speed as the arm
-        block_constraint = FunctionHandleConstraint(-1*minor,minor,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
-        prog = prog.addStateConstraint(block_constraint,all_states);
+        %block_constraint = FunctionHandleConstraint(-1*minor,minor,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
+        %prog = prog.addStateConstraint(block_constraint,all_states);
     end
 end
