@@ -1,0 +1,5 @@
+# temp files
+*~
+
+# drake temp files
+*.out

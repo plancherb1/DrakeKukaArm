@@ -162,13 +162,13 @@ function runMoveBlockStaged()
         prog = prog.addRunningCost(@(dt,x,u)cost0M(p,dt,x,u,n_arm_u));
         prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
         % make sure the block doesn't move while not touching arm
-        block_constraint = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVel(x,blockVelOffset,1));
-        prog = prog.addStateConstraint(block_constraint,all_states);
+        %block_constraint = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVel(x,blockVelOffset,1));
+        %prog = prog.addStateConstraint(block_constraint,all_states);
     end
 
     %% function to add custom constraints and cost functions
     function [prog] = addCostsAndConstraintsMF(p,prog,blockPosOffset,blockVelOffset,n_arm_u,all_states)
-        prog = prog.addRunningCost(@(dt,x,u)cost(p,dt,x,u,blockPosOffset));
+        prog = prog.addRunningCost(@(dt,x,u)costMF(p,dt,x,u,blockPosOffset));
         prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
         % make sure the block moves at same speed as the arm
         block_constraint = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)handBlockVelError(p,x,blockVelOffset,1));
