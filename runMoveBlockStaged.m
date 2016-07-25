@@ -9,7 +9,8 @@ function runMoveBlockStaged()
     p = getBasicPlant();
         
     % add the block reprsenting the hand
-    p = addHand(p,'../../Atlas/urdf/robotiq_box.urdf');
+    p = addHand(p,'../../Atlas/urdf/robotiq_box.urdf',[pi/2;0;0],[0;0;.05]);
+    %p = addHand(p,'../urdf/robotiq_85.urdf',[0;0;0],[0;0;0]);
     n_arm_pos = p.num_positions;
     n_arm_vel = p.num_velocities;
     n_arm_u = size(p.umin,1);
@@ -31,8 +32,8 @@ function runMoveBlockStaged()
     % get initial guess trajectories
     [traj_init0M.x] = computeKinematicTraj(p,x0,xm,n_arm_pos);
     [traj_initMF.x] = computeKinematicTraj(p,xm,xf,n_arm_pos);
-    %v.playback(traj_init0M.x);
-    %v.playback(traj_initMF.x);
+    v.playback(traj_init0M.x);
+    v.playback(traj_initMF.x);
     
     % set up the first Dircol
     N = 21;
@@ -107,7 +108,7 @@ function runMoveBlockStaged()
     end
     
     %% Running cost from 0 to M
-    function [g,dg] = cost0M(p,dt,x,u,n_arm_u)
+    function [g,dg] = cost0M(p,dt,x,u,n_arm_u,blockPosOffset)
         % include angle magniture do things that could possibly cause it to
         % go under ground (aka 2,4,6 joint values distance from 0)
         xpen = zeros(size(x,1),1);
@@ -122,11 +123,16 @@ function runMoveBlockStaged()
         r_diag(n_arm_u+1:size(u,1)) = 10000;
         R = diag(r_diag);
         
+        % penalize for hand to ball distance to direct in more humanlike
+        % direction of motion
+        [dis,dDis] = distanceHandBlock(p,x,blockPosOffset,0.2,1);
+        Qd = 100;
+        
         % then compute total cost and gradients
-        g = xpen'*Q*xpen + u'*R*u;
+        g = xpen'*Q*xpen + dis'*Qd*dis + u'*R*u;
         
         dgddt = 0;
-        dgdx = 2*xpen'*Q;
+        dgdx = 2*xpen'*Q + 2*dis'*Qd*dDis;
         dgdu = 2*u'*R;
         dg = [dgddt,dgdx,dgdu];
     end
@@ -159,11 +165,15 @@ function runMoveBlockStaged()
 
     %% function to add custom constraints and cost functions
     function [prog] = addCostsAndConstraints0M(p,prog,blockPosOffset,blockVelOffset,n_arm_u,all_states)
-        prog = prog.addRunningCost(@(dt,x,u)cost0M(p,dt,x,u,n_arm_u));
+        prog = prog.addRunningCost(@(dt,x,u)cost0M(p,dt,x,u,n_arm_u,blockPosOffset));
         prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
-        % make sure the block doesn't move while not touching arm
-        %block_constraint = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVel(x,blockVelOffset,1));
-        %prog = prog.addStateConstraint(block_constraint,all_states);
+        % make sure the block velocities are zero identially
+        block_constraint_x = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVelX(x,blockVelOffset));
+        block_constraint_y = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVelY(x,blockVelOffset));
+        block_constraint_z = FunctionHandleConstraint(0,0,p.num_positions+p.num_velocities,@(x)blockVelZ(x,blockVelOffset));
+        prog = prog.addStateConstraint(block_constraint_x,all_states);
+        prog = prog.addStateConstraint(block_constraint_y,all_states);
+        prog = prog.addStateConstraint(block_constraint_z,all_states);
     end
 
     %% function to add custom constraints and cost functions

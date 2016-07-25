@@ -7,17 +7,19 @@ function runControlledFallWithHand()
     w = warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
     p = RigidBodyManipulator('urdf/iiwa14.urdf',options);
     warning(w);
-    
+
     % add the hand
     options_hand.weld_to_link = p.findLinkId('iiwa_link_7');
     options_hand.axis = [0;0;1];
-    p = p.addRobotFromURDF(getFullPathFromRelativePath('../Atlas/urdf/robotiq_simple.urdf'),[0;0;0],[pi/2;0;0],options_hand);
+    %p = p.addRobotFromURDF(getFullPathFromRelativePath('../Atlas/urdf/robotiq_simple.urdf'),[0;0;0],[pi/2;0;0],options_hand);
+    p = p.addRobotFromURDF(getFullPathFromRelativePath('/urdf/robotiq_85.urdf'),[0;0;0],[0;0;0],options_hand);
     p = p.compile();
     
     % get the vizualizer
     v = p.constructVisualizer();
     v.display_dt = .05;
     v.axis = [-1 1 -1 1 -1 1];
+    
     %v.inspector();%[0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0]);
     %return;
 
