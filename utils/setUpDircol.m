@@ -15,6 +15,8 @@ function [prog,all_states] = setUpDircol(p,x0,xf,N,blockPosOffset,tol)
     non_ground_penetration_m = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)middleHeight(p,x));
     prog = prog.addStateConstraint(non_ground_penetration_m,all_states);
     % make sure ball doesn't go into the ground
-    non_ground_penetration_b = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)ballHeight(x,blockPosOffset));
-    prog = prog.addStateConstraint(non_ground_penetration_b,all_states);
+    if blockPosOffset
+        non_ground_penetration_b = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)ballHeight(x,blockPosOffset));
+        prog = prog.addStateConstraint(non_ground_penetration_b,all_states);
+    end
 end

@@ -1,11 +1,15 @@
 %% run controlled fall with a hand attached to it in two stages first without then with the hand to be faster
 function runControlledFallWithHandStaged()
-    
+
+    % add the utils folder to the path
+    utils_path = strcat(pwd, '/utils');
+    addpath(utils_path);
+
     % get the plant
     p = getBasicPlant();
     
     % add the block reprsenting the hand
-    p = addHand(p,'../Atlas/urdf/robotiq_box.urdf');
+    p = addHand(p,'../../Atlas/urdf/robotiq_box.urdf',[pi/2;0;0],[0;0;0]);
     
     % get the vizualizer
     v = p.constructVisualizer();
@@ -18,7 +22,9 @@ function runControlledFallWithHandStaged()
     
     % set up Dircol
     N = 21;
-    prog = setUpDircol(p,x0,xf,N);
+    prog = setUpDircol(p,x0,xf,N,0,0);
+    prog = prog.addRunningCost(@cost);
+    prog = prog.addFinalCost(@finalCost);
     
     % get initial guess trajectory
     tf0 = 4;
@@ -39,13 +45,16 @@ function runControlledFallWithHandStaged()
     
     % now re-set up the problem with the actual hand on the plant
     p2 = getBasicPlant();
-    p2 = addHand(p2,'../Atlas/urdf/robotiq_simple.urdf');
+    p2 = addHand(p2,'../../Atlas/urdf/robotiq_simple.urdf',[pi/2;0;0],[0;0;0]);
+    %p2 = addHand(p2,'../urdf/robotiq_85.urdf',[0;0;0],[0;0;0]);
     v2 = p2.constructVisualizer();
     v2.display_dt = .05;
     x02 = zeros(p2.num_positions + p2.num_velocities,1);
     xf2 = zeros(p2.num_positions + p2.num_velocities,1);
     xf2(2) = pi/2;
-    prog = setUpDircol(p2,x02,xf2,N);
+    prog = setUpDircol(p2,x02,xf2,N,0,0);
+    prog = prog.addRunningCost(@cost);
+    prog = prog.addFinalCost(@finalCost);
     
     % now add 0s to fill out the x and u traj from before
     arm_xtraj = traj_init.x;
@@ -69,6 +78,9 @@ function runControlledFallWithHandStaged()
             break;
         end
     end
+    
+    % remove the utils from the path
+    rmpath(utils_path);
     
     % playback the final trajectory
     v2.playback(xtraj2, struct('slider', true));
@@ -133,46 +145,5 @@ function runControlledFallWithHandStaged()
         Qf = 100*diag([1,10,ones(1,size(x,1)-2)]);
         h = Qt*t + xerr'*Q*xerr;
         dh = [Qt, 2*xerr'*Qf];
-    end
-
-    %% get the basic plant
-    function [p] = getBasicPlant()
-        options.floating = false;
-        options.terrain = RigidBodyFlatTerrain();
-        w = warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
-        p = RigidBodyManipulator('urdf/iiwa14.urdf',options);
-        warning(w);
-    end
-
-    %% add a urdf as hand to the plant
-    function [p] = addHand(p,urdfPath)
-        options_hand.weld_to_link = p.findLinkId('iiwa_link_7');
-        options_hand.axis = [0;0;1];
-        p = p.addRobotFromURDF(getFullPathFromRelativePath(urdfPath),[0;0;0],[pi/2;0;0],options_hand);
-        p = p.compile();
-    end
-
-    %% function to return hand height
-    function [z] = handHeight(p,x)
-        kinsol = p.doKinematics(x(1:p.num_positions));
-        hand_body = p.findLinkId('iiwa_link_7');
-        pos_on_hand_body = [0;0;0.25];
-        [hand_pos, dHand_pos] = p.forwardKin(kinsol,hand_body,pos_on_hand_body);
-        z = hand_pos(3);
-    end
-
-    %% setup Dircol
-    function [prog] = setUpDircol(p,x0,xf,N)
-        all_states = zeros(1,N);
-        for index = 1:N
-            all_states(index) = index;
-        end
-        prog = DircolTrajectoryOptimization(p,N,[2 6]);
-        prog = prog.addStateConstraint(ConstantConstraint(x0),1);
-        prog = prog.addStateConstraint(ConstantConstraint(xf),N);
-        non_ground_penetration = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)handHeight(p,x));
-        prog = prog.addStateConstraint(non_ground_penetration,all_states);
-        prog = prog.addRunningCost(@cost);
-        prog = prog.addFinalCost(@finalCost);
     end
 end

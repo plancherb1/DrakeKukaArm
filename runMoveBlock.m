@@ -1,17 +1,21 @@
 %% controlled fall to block followed by raising it up
 function runMoveBlock()
+
+    % add the utils folder to the path
+    utils_path = strcat(pwd, '/utils');
+    addpath(utils_path);
     
     % get the plant
     p = getBasicPlant();
         
     % add the block reprsenting the hand
-    p = addHand(p,'../Atlas/urdf/robotiq_box.urdf');
+    p = addHand(p,'../../Atlas/urdf/robotiq_box.urdf',[pi/2;0;0],[0;0;0]);
     n_arm_pos = p.num_positions;
     n_arm_vel = p.num_velocities;
     n_arm_u = size(p.umin,1);
     
     % add the actuated block
-    p = addBlock(p,'urdf/XYZActuatedBlock.urdf');
+    p = addBlock(p,'../urdf/XYZActuatedBlock.urdf');
     n_block_pos = p.num_positions - n_arm_pos;
     n_block_vel = p.num_velocities - n_arm_vel;
     n_block_u = size(p.umin,1) - n_arm_u;
@@ -27,10 +31,15 @@ function runMoveBlock()
     
     % set up Dircol
     N = 21;
-    d = 0.1; % distance buffer for "touching"
     blockVelOffset = n_arm_pos + n_block_pos + n_arm_vel;
     blockPosOffset = n_arm_pos;
-    prog = setUpDircol(p,x0,xf,N,d,blockPosOffset,blockVelOffset);
+    [prog,all_states] = setUpDircol(p,x0,xf,N,blockPosOffset,0.1);
+    prog = prog.addRunningCost(@(dt,x,u)cost(p,dt,x,u,n_arm_u,blockPosOffset));
+    prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
+    % make sure the block doesn't move if not touching the arm else
+    % moves at same speed as the arm
+    %block_constraint = FunctionHandleConstraint(-1*minor,minor,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
+    %prog = prog.addStateConstraint(block_constraint,all_states);
     
     % compute the trajectory
     for attempts=1:10
@@ -45,6 +54,9 @@ function runMoveBlock()
         end
     end
     
+    % remove the utils from the path
+    rmpath(utils_path);
+    
     % playback the final trajectory
     v.playback(xtraj, struct('slider', true));
     
@@ -52,7 +64,7 @@ function runMoveBlock()
     %% Running cost function
     function [g,dg] = cost(p,dt,x,u,blockPosOffset,blockVelOffset)
         % penalize for distance of hand from block
-        [xerr, dXerr] = distanceHandBlock(p,x,blockPosOffset);
+        [xerr, dXerr] = distanceHandBlock(p,x,blockPosOffset,0.2,0);
         Q = 10*diag(ones(1,size(xerr,1)));
         
         % penalize for finger movements
@@ -77,30 +89,6 @@ function runMoveBlock()
         Qt = 1000;
         h = Qt*t;
         dh = [Qt,zeros(1,size(x,1))];
-    end
-
-    %% get the basic plant
-    function [p] = getBasicPlant()
-        options.floating = false;
-        options.terrain = RigidBodyFlatTerrain();
-        w = warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
-        p = RigidBodyManipulator('urdf/iiwa14.urdf',options);
-        warning(w);
-    end
-
-    %% add a urdf as hand to the plant
-    function [p] = addHand(p,urdfPath)
-        options_hand.weld_to_link = p.findLinkId('iiwa_link_7');
-        options_hand.axis = [0;0;1];
-        p = p.addRobotFromURDF(getFullPathFromRelativePath(urdfPath),[0;0;.05],[pi/2;0;0],options_hand);
-        p = p.compile();
-    end
-
-    %% add the block to the combined plant
-    function [p] = addBlock(p,urdfPath)
-        options_block.floating = false;
-        p = p.addRobotFromURDF(getFullPathFromRelativePath(urdfPath),[0;0;0],[0;0;0],options_block);
-        p = p.compile();
     end
     
 
@@ -176,85 +164,6 @@ function runMoveBlock()
         xtrajmf = xtrajmf.shiftTime(Tf);
         xtraj = xtraj0m.append(xtrajmf);
     end
-    
-    %% function to return hand pos
-    function [hand_pos, dHand_pos, ddHand_pos] = handPos(p,x)
-        q = x(1:p.num_positions);
-        qd = x(p.num_positions+1:p.num_positions+p.num_velocities);
-        kinsol_options.compute_gradients = true;
-        kinsol = p.doKinematics(q,qd,kinsol_options);
-        hand_body = p.findLinkId('iiwa_link_7');
-        pos_on_hand_body = [0;0;0.25];
-        [hand_pos, dHand_pos, ddHand_pos] = p.forwardKin(kinsol,hand_body,pos_on_hand_body);
-    end
-
-    %% function to return hand height
-    function [z,dZ] = handHeight(p,x)
-        [hand_pos, dHand_pos] = handPos(p,x);
-        z = hand_pos(3);
-        dZ = [dHand_pos(3,:), zeros(1,p.num_velocities)];
-    end
-
-    %% function to return middle height
-    function [z,dZ] = middleHeight(p,x)
-        kinsol = p.doKinematics(x(1:p.num_positions));
-        hand_body = p.findLinkId('iiwa_link_4');
-        pos_on_hand_body = [0;0;0];
-        [hand_pos, dHand_pos] = p.forwardKin(kinsol,hand_body,pos_on_hand_body);
-        z = hand_pos(3);
-        dZ = [dHand_pos(3,:), zeros(1,p.num_velocities)];
-    end
-
-    %% function to retrun block height
-    function [z] = ballHeight(x,blockPosOffset)
-        z = x(blockPosOffset+3) - 0.2; %0.2 is radius
-    end
-    
-    %% matrix of distance of block from hand (base) and norm
-    function [xerr, dXerr, dis, dDis] = distanceHandBlock(p,x,blockPosOffset)
-        [hand_pos, dHand_pos, ddHand_pos] = handPos(p,x);
-        block_pos = x(blockPosOffset+1:blockPosOffset+3);
-        dBlock_pos = zeros(3,p.num_positions);
-        dBlock_pos(1,blockPosOffset+1) = 1;
-        dBlock_pos(2,blockPosOffset+2) =1;
-        dBlock_pos(3,blockPosOffset+3) = 1;
-        xerr = hand_pos - block_pos;
-        dXerr = [dHand_pos - dBlock_pos, zeros(3,p.num_velocities)];
-        disSq = xerr'*eye(size(xerr,1))*xerr;
-        dDisSq = 2*xerr'*dXerr;
-        radius = 0.2;
-        dis = sqrt(disSq) - radius;
-        dDis = 1/2*disSq * dDisSq;
-    end
-
-    %% repetatively multiply sections of A by B
-    function [C] = repmult(A,B)
-        n = size(B,1);
-        m = size(A,1);
-        C = zeros(m,n);
-        for index = 1:n
-            C(:,index) = A(:,(index-1)*n+1:index*n)*B;
-        end
-    end
-
-    %% function to return hand vel
-    function [hand_vel,dHand_vel] = handVel(p,x)
-        [hand_pos, dHand_pos, ddHand_pos] = handPos(p,x);
-        qd = x(p.num_positions+1:p.num_positions+p.num_velocities);
-        hand_vel = dHand_pos * qd;
-        dHand_vel = [repmult(ddHand_pos,qd),dHand_pos];
-    end
-
-    %% function to to return block vel and its norm
-    function [block_vel, dBlock_vel, vel, dVel] = blockVel(x,blockVelOffset)
-        block_vel = x(blockVelOffset+1:blockVelOffset+3);
-        dBlock_vel = zeros(1,size(x,1));
-        dBlock_vel(1,blockVelOffset+1) = 1;
-        dBlock_vel(2,blockVelOffset+2) = 1;
-        dBlock_vel(3,blockVelOffset+3) = 1;
-        vel = sqrt(block_vel'*eye(size(block_vel,1))*block_vel);
-        dVel = 2*block_vel'*dBlock_vel;
-    end
 
     %% function ensure correct block velocity
     function [res,dRes] = blockVelDist(p,x,d,blockPosOffset,blockVelOffset)
@@ -278,43 +187,5 @@ function runMoveBlock()
             dRes = 1/2*delta_vel'*dDelta_vel;
         end
         %}
-    end
-
-    %% setup Dircol
-    function [prog] = setUpDircol(p,x0,xf,N,d,blockPosOffset,blockVelOffset)
-        minor = 0.001;
-        major = 0.01;
-        %{
-        options.MinorFeasibilityTolerance = minor;
-        options.MajorFeasibilityTolerance = major;
-        options.MajorOptimalityTolerance = major;
-        options.compl_slack = minor;
-        options.lincompl_slack = major;
-        options.jlcompl_slack = major;
-        %}
-        prog = DircolTrajectoryOptimization(p,N,[2 6]);%,options);
-        % intial and final states and costs
-        prog = prog.addStateConstraint(ConstantConstraint(x0),1);
-        prog = prog.addStateConstraint(BoundingBoxConstraint(xf-major,xf+major),N);
-        prog = prog.addRunningCost(@(dt,x,u)cost(p,dt,x,u,blockPosOffset,blockVelOffset));
-        prog = prog.addFinalCost(@(t,x)finalCost(p,t,x));
-        % get all states for certain constraints
-        all_states = zeros(1,N);
-        for index = 1:N
-            all_states(index) = index;
-        end
-        % make sure hand doesn't penetrate the ground
-        non_ground_penetration = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)handHeight(p,x));
-        prog = prog.addStateConstraint(non_ground_penetration,all_states);
-        % make sure middle of arm doesn't penetrate the ground
-        non_ground_penetration_m = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)middleHeight(p,x));
-        prog = prog.addStateConstraint(non_ground_penetration_m,all_states);
-        % make sure ball doesn't go into the ground
-        non_ground_penetration_b = FunctionHandleConstraint(0,inf,p.num_positions+p.num_velocities,@(x)ballHeight(x,blockPosOffset));
-        prog = prog.addStateConstraint(non_ground_penetration_b,all_states);
-        % make sure the block doesn't move if not touching the arm else
-        % moves at same speed as the arm
-        %block_constraint = FunctionHandleConstraint(-1*minor,minor,p.num_positions+p.num_velocities,@(x)blockVelDist(p,x,d,blockPosOffset,blockVelOffset));
-        %prog = prog.addStateConstraint(block_constraint,all_states);
     end
 end

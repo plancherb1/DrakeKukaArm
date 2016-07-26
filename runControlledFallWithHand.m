@@ -1,19 +1,15 @@
 %% run controlled fall with a hand attached to it
 function runControlledFallWithHand()
 
+    % add the utils folder to the path
+    utils_path = strcat(pwd, '/utils');
+    addpath(utils_path);
+
     % get the plant
-    options.floating = false;
-    options.terrain = RigidBodyFlatTerrain();
-    w = warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
-    p = RigidBodyManipulator('urdf/iiwa14.urdf',options);
-    warning(w);
+    p = getBasicPlant();
 
     % add the hand
-    options_hand.weld_to_link = p.findLinkId('iiwa_link_7');
-    options_hand.axis = [0;0;1];
-    %p = p.addRobotFromURDF(getFullPathFromRelativePath('../Atlas/urdf/robotiq_simple.urdf'),[0;0;0],[pi/2;0;0],options_hand);
-    p = p.addRobotFromURDF(getFullPathFromRelativePath('/urdf/robotiq_85.urdf'),[0;0;0],[0;0;0],options_hand);
-    p = p.compile();
+    p = addHand(p,'../../Atlas/urdf/robotiq_box.urdf',[pi/2;0;0],[0;0;0]);
     
     % get the vizualizer
     v = p.constructVisualizer();
@@ -31,9 +27,7 @@ function runControlledFallWithHand()
     % set up Dircol
     tf0 = 4;
     N = 21;
-    prog = DircolTrajectoryOptimization(p,N,[2 6]);
-    prog = prog.addStateConstraint(ConstantConstraint(x0),1);
-    prog = prog.addStateConstraint(ConstantConstraint(xf),N);
+    prog = setUpDircol(p,x0,xf,N,0,0);
     prog = prog.addRunningCost(@cost);
     prog = prog.addFinalCost(@finalCost);
     
@@ -53,6 +47,9 @@ function runControlledFallWithHand()
             traj_init.u = utraj;
         end
     end
+    
+    % remove the utils from the path
+    rmpath(utils_path);
     
     % playback the trajectory
     v.playback(xtraj, struct('slider', true));

@@ -1,13 +1,12 @@
 %% run swingUp
 function runSwingUp()
+    % add the utils folder to the path
+    utils_path = strcat(pwd, '/utils');
+    addpath(utils_path);
 
     % get the plant
-    options.floating = false;
-    options.terrain = RigidBodyFlatTerrain();
-    w = warning('off','Drake:RigidBodyManipulator:UnsupportedVelocityLimits');
-    p = RigidBodyManipulator('urdf/iiwa14.urdf',options);
-    warning(w);
-
+    p = getBasicPlant();
+    
     % get the vizualizer
     v = p.constructVisualizer();
     v.display_dt = .05;
@@ -41,6 +40,9 @@ function runSwingUp()
             traj_init.u = utraj;
         end
     end
+    
+    % remove the utils from the path
+    rmpath(utils_path);
     
     % playback the trajectory
     v.playback(xtraj, struct('slider', true));
